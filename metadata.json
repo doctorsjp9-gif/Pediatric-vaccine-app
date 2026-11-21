@@ -1,0 +1,6 @@
+{
+  "name": "Dr Priyank Vaccine Clinic",
+  "description": "Pediatric vaccine inventory and clinic management for Dr Priyank Vaccine Clinic with WhatsApp PDF bills, patient vaccine reminders, clinic profile customization, Gmail and Mobile OTP login, and multi-device cloud synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

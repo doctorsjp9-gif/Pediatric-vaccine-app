@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "VaccineSyncItem": {
+      "title": "VaccineSyncItem",
+      "description": "Vaccine stock record synced to Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Local ID" },
+        "name": { "type": "string", "description": "Vaccine name" },
+        "manufacturer": { "type": "string", "description": "Manufacturer name" },
+        "batchNumber": { "type": "string", "description": "Batch number" },
+        "expiryDate": { "type": "string", "description": "Expiry date formatted YYYY-MM-DD" },
+        "dosesRemaining": { "type": "number", "description": "Remaining doses" },
+        "purchasePrice": { "type": "number", "description": "Purchase price per vial" },
+        "sellingPrice": { "type": "number", "description": "Selling/admin price per dose" },
+        "mrp": { "type": "number", "description": "MRP per vial" },
+        "category": { "type": "string", "description": "Category e.g. Pediatric" },
+        "minStockThreshold": { "type": "number", "description": "Alert threshold" },
+        "storageLocation": { "type": "string", "description": "Storage rack/fridge location" },
+        "notes": { "type": "string", "description": "Additional notes" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["id", "name", "dosesRemaining", "batchNumber", "expiryDate"]
+    },
+    "VendorSyncItem": {
+      "title": "VendorSyncItem",
+      "description": "Vendor or supplier record synced to Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Local ID" },
+        "name": { "type": "string", "description": "Vendor company name" },
+        "contactPerson": { "type": "string", "description": "Contact person name" },
+        "phoneNumber": { "type": "string", "description": "Phone number" },
+        "email": { "type": "string", "description": "Email address" },
+        "address": { "type": "string", "description": "Vendor address" },
+        "notes": { "type": "string", "description": "Vendor notes" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["id", "name"]
+    },
+    "TransactionSyncItem": {
+      "title": "TransactionSyncItem",
+      "description": "Purchase or sale stock transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Local transaction ID" },
+        "vaccineId": { "type": "number", "description": "Referenced vaccine ID" },
+        "vaccineName": { "type": "string", "description": "Snapshot of vaccine name" },
+        "type": { "type": "string", "description": "Transaction type (PURCHASE or SALE)" },
+        "quantity": { "type": "number", "description": "Quantity doses or vials" },
+        "batchNumber": { "type": "string", "description": "Batch number" },
+        "expiryDate": { "type": "string", "description": "Expiry date" },
+        "unitPrice": { "type": "number", "description": "Price per unit" },
+        "totalAmount": { "type": "number", "description": "Total amount" },
+        "patientName": { "type": "string", "description": "Patient name for sales" },
+        "patientContact": { "type": "string", "description": "Patient contact for sales" },
+        "vendorName": { "type": "string", "description": "Vendor name for purchases" },
+        "transactionDate": { "type": "number", "description": "Epoch timestamp of transaction" },
+        "invoiceNumber": { "type": "string", "description": "Bill or invoice number" },
+        "notes": { "type": "string", "description": "Notes" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["id", "vaccineId", "type", "quantity", "totalAmount"]
+    },
+    "PatientSyncItem": {
+      "title": "PatientSyncItem",
+      "description": "Registered patient with immunization details and reminders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Local patient ID" },
+        "patientName": { "type": "string", "description": "Child or patient full name" },
+        "patientAgeOrDob": { "type": "string", "description": "Age or date of birth" },
+        "gender": { "type": "string", "description": "Gender" },
+        "parentName": { "type": "string", "description": "Father or Mother name" },
+        "parentContactNumber": { "type": "string", "description": "Parent mobile number" },
+        "vaccineGivenToday": { "type": "string", "description": "Vaccine administered today" },
+        "vaccineBatchNumber": { "type": "string", "description": "Vaccine batch number" },
+        "vaccineDoseGiven": { "type": "string", "description": "Dose sequence e.g. Dose 1" },
+        "registrationDate": { "type": "number", "description": "Epoch timestamp of registration" },
+        "nextPlannedVaccine": { "type": "string", "description": "Next scheduled vaccine" },
+        "nextDueDate": { "type": "string", "description": "Next due date YYYY-MM-DD" },
+        "reminderSent": { "type": "boolean", "description": "Whether reminder was sent" },
+        "reminderSentDate": { "type": "number", "description": "Timestamp when reminder was sent" },
+        "doctorRemarks": { "type": "string", "description": "Doctor remarks or special advice" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["id", "patientName", "parentContactNumber"]
+    },
+    "ClinicProfileSyncItem": {
+      "title": "ClinicProfileSyncItem",
+      "description": "Clinic branding, contact info and configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Profile ID usually 1" },
+        "clinicName": { "type": "string", "description": "Clinic name" },
+        "doctorName": { "type": "string", "description": "Doctor name" },
+        "qualification": { "type": "string", "description": "Degrees or qualification" },
+        "mobileNumber": { "type": "string", "description": "Clinic phone number" },
+        "alternateNumber": { "type": "string", "description": "Alternate clinic number" },
+        "email": { "type": "string", "description": "Clinic email" },
+        "address": { "type": "string", "description": "Full clinic address" },
+        "registrationNumber": { "type": "string", "description": "Medical council registration number" },
+        "logoType": { "type": "string", "description": "Preset icon identifier or custom" },
+        "customLogoUri": { "type": "string", "description": "Custom photo URI string" },
+        "themeColor": { "type": "string", "description": "Theme color key" },
+        "billingGreeting": { "type": "string", "description": "Bill footer greeting" },
+        "whatsappReminderTemplate": { "type": "string", "description": "WhatsApp reminder message template" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["clinicName", "doctorName", "mobileNumber"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/vaccines/{vaccineId}": {
+      "schema": { "$ref": "#/entities/VaccineSyncItem" },
+      "description": "User's synchronized vaccine inventory items"
+    },
+    "/users/{userId}/vendors/{vendorId}": {
+      "schema": { "$ref": "#/entities/VendorSyncItem" },
+      "description": "User's synchronized vendor directory"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/TransactionSyncItem" },
+      "description": "User's synchronized purchase and sales transactions"
+    },
+    "/users/{userId}/patients/{patientId}": {
+      "schema": { "$ref": "#/entities/PatientSyncItem" },
+      "description": "User's synchronized patient registrations and reminders"
+    },
+    "/users/{userId}/clinicProfile/profile": {
+      "schema": { "$ref": "#/entities/ClinicProfileSyncItem" },
+      "description": "User's synchronized clinic profile details"
+    }
+  }
+}

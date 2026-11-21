@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidTimestamp(val) {
+      return val is timestamp && val <= request.time;
+    }
+
+    function isValidVaccine(data) {
+      return data.id is number
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && (!('currentStock' in data) || (data.currentStock is number && data.currentStock >= 0))
+        && (!('category' in data) || data.category is string)
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidVendor(data) {
+      return data.id is number
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidTransaction(data) {
+      return data.id is number
+        && data.vaccineId is number
+        && (data.type == 'PURCHASE' || data.type == 'SALE' || data.type == 'ADJUSTMENT_ADD' || data.type == 'ADJUSTMENT_REDUCE')
+        && data.quantity is number && data.quantity > 0
+        && data.totalAmount is number && data.totalAmount >= 0
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidPatient(data) {
+      return data.id is number
+        && data.patientName is string && data.patientName.size() > 0 && data.patientName.size() <= 200
+        && data.mobileNumber is string && data.mobileNumber.size() <= 50
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidClinicProfile(data) {
+      return data.clinicName is string && data.clinicName.size() > 0 && data.clinicName.size() <= 200
+        && data.doctorName is string && data.doctorName.size() > 0 && data.doctorName.size() <= 200
+        && data.phone is string && data.phone.size() <= 50
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    match /users/{userId} {
+      match /vaccines/{vaccineId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidVaccine(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /vendors/{vendorId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidVendor(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /transactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidTransaction(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /patients/{patientId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidPatient(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /clinicProfile/{docId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidClinicProfile(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
