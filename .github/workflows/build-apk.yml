@@ -25,7 +25,7 @@ jobs:
     - name: Create mock google-services.json and debug.keystore
       run: |
         mkdir -p app
-        echo '{"project_info":{"project_number":"123456789","project_id":"dummy-project","storage_bucket":"dummy.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:123456789","android_client_info":{"package_name":"com.aistudio.vaccinestock.qrxvwt"}},"oauth_client":[],"api_key":[{"current_key":"dummy_key"}],"services":{}}],"configuration_version":"1"}' > app/google-services.json
+        echo '{"project_info":{"project_number":"123456789","project_id":"dummy-project","storage_bucket":"dummy.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:123456789","android_client_info":{"package_name":"com.aistudio.vaccinestock.qrxvwt"}},"oauth_client":[{"client_id":"dummy_client_id.apps.googleusercontent.com","client_type":3}],"api_key":[{"current_key":"dummy_key"}],"services":{}}],"configuration_version":"1"}' > app/google-services.json
         keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
         keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
