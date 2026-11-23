@@ -86,6 +86,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -131,6 +132,8 @@ fun BillScanStockDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val latestVaccines by rememberUpdatedState(vaccines)
+    val latestVendors by rememberUpdatedState(vendors)
 
     var scanState by remember { mutableStateOf<BillScanUiState>(BillScanUiState.Idle) }
     var billPages by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
@@ -192,7 +195,7 @@ fun BillScanStockDialog(
             newVendorName = ""
             newVendorPhone = ""
         } else if (result.vendorName.isNotBlank()) {
-            val matchedVendor = vendors.firstOrNull { v ->
+            val matchedVendor = latestVendors.firstOrNull { v ->
                 v.name.equals(result.vendorName, ignoreCase = true) ||
                     v.name.lowercase().contains(result.vendorName.lowercase()) ||
                     result.vendorName.lowercase().contains(v.name.lowercase())
@@ -207,14 +210,9 @@ fun BillScanStockDialog(
                 newVendorPhone = result.vendorPhone
             }
         }
-        lineItems.clear()
         if (result.items.isNotEmpty()) {
+            lineItems.clear()
             lineItems.addAll(result.items)
-        } else {
-            val fallbackVac = vaccines.find { it.id == preSelectedVaccineId }
-                ?: vaccines.minByOrNull { it.currentStock }
-                ?: vaccines.firstOrNull()
-            lineItems.add(createLineItemForVaccine(fallbackVac, defaultQty = 10))
         }
     }
 
@@ -222,12 +220,12 @@ fun BillScanStockDialog(
         if (bitmaps.isEmpty()) return
         billPages = bitmaps
         selectedSourceLabel = sourceName
-        scanState = BillScanUiState.Analyzing("Extracting vaccine items & quantities from $sourceName...")
+        scanState = BillScanUiState.Analyzing("Reading bill & matching vaccines from $sourceName...")
         scope.launch {
             val state = BillScannerHelper.analyzeBillWithGemini(
                 bitmaps = bitmaps,
-                existingVaccines = vaccines,
-                existingVendors = vendors,
+                existingVaccines = latestVaccines,
+                existingVendors = latestVendors,
                 preSelectedVaccineId = preSelectedVaccineId,
                 sourceFileName = sourceName
             )
@@ -239,14 +237,6 @@ fun BillScanStockDialog(
                 is BillScanUiState.ManualReviewNeeded -> {
                     applyScanResultToForm(state.result)
                 }
-                is BillScanUiState.Error -> {
-                    if (lineItems.isEmpty()) {
-                        val fallbackVac = vaccines.find { it.id == preSelectedVaccineId }
-                            ?: vaccines.minByOrNull { it.currentStock }
-                            ?: vaccines.firstOrNull()
-                        lineItems.add(createLineItemForVaccine(fallbackVac, defaultQty = 10))
-                    }
-                }
                 else -> {}
             }
         }
@@ -256,15 +246,9 @@ fun BillScanStockDialog(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap: Bitmap? ->
         if (bitmap != null) {
-            triggerAiScan(listOf(BillScannerHelper.scaleBitmapDown(bitmap, 1200)), "Camera Bill Photo")
+            triggerAiScan(listOf(BillScannerHelper.scaleBitmapDown(bitmap, 2048)), "Camera Bill Photo")
         } else {
-            if (lineItems.isEmpty()) {
-                val fallbackVac = vaccines.find { it.id == preSelectedVaccineId }
-                    ?: vaccines.minByOrNull { it.currentStock }
-                    ?: vaccines.firstOrNull()
-                lineItems.add(createLineItemForVaccine(fallbackVac, defaultQty = 10))
-            }
-            Toast.makeText(context, "Camera closed. You can select vaccines below or retry camera.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Camera closed without capturing a photo.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -278,27 +262,14 @@ fun BillScanStockDialog(
                 val loadResult = BillScannerHelper.loadBillBitmapFromFile(savedPath)
                 loadResult.onSuccess { bitmaps ->
                     triggerAiScan(bitmaps, "Camera Bill Photo")
-                }.onFailure {
-                    val fallbackResult = BillScannerHelper.buildFallbackBillResult(
-                        existingVaccines = vaccines,
-                        existingVendors = vendors,
-                        preSelectedVaccineId = preSelectedVaccineId,
-                        sourceFileName = "Camera Bill Photo"
+                }.onFailure { err ->
+                    scanState = BillScanUiState.Error(
+                        "Could not read captured photo (${err.localizedMessage ?: "file error"}). Please retake the bill photo or choose from Gallery."
                     )
-                    scanState = BillScanUiState.ManualReviewNeeded(
-                        result = fallbackResult,
-                        noticeMessage = "Camera photo captured. Verify vaccine name and quantity below to update stock."
-                    )
-                    applyScanResultToForm(fallbackResult)
                 }
             }
         } else if (!success) {
-            if (lineItems.isEmpty()) {
-                val fallbackVac = vaccines.find { it.id == preSelectedVaccineId }
-                    ?: vaccines.minByOrNull { it.currentStock }
-                    ?: vaccines.firstOrNull()
-                lineItems.add(createLineItemForVaccine(fallbackVac, defaultQty = 10))
-            }
+            Toast.makeText(context, "Camera capture cancelled. Tap Camera again or pick a bill photo.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -337,18 +308,10 @@ fun BillScanStockDialog(
                 val loadResult = BillScannerHelper.loadBillBitmapsFromUri(context, uri)
                 loadResult.onSuccess { (bitmaps, _) ->
                     triggerAiScan(bitmaps, displayName)
-                }.onFailure {
-                    val fallbackResult = BillScannerHelper.buildFallbackBillResult(
-                        existingVaccines = vaccines,
-                        existingVendors = vendors,
-                        preSelectedVaccineId = preSelectedVaccineId,
-                        sourceFileName = displayName
+                }.onFailure { err ->
+                    scanState = BillScanUiState.Error(
+                        "Unable to open selected image (${err.localizedMessage ?: "invalid image"}). Try another photo or PDF."
                     )
-                    scanState = BillScanUiState.ManualReviewNeeded(
-                        result = fallbackResult,
-                        noticeMessage = "Bill image attached. Select vaccine and quantity below to update stock."
-                    )
-                    applyScanResultToForm(fallbackResult)
                 }
             }
         }
@@ -365,18 +328,10 @@ fun BillScanStockDialog(
                 loadResult.onSuccess { (bitmaps, isPdf) ->
                     val label = if (isPdf) "PDF: $displayName" else displayName
                     triggerAiScan(bitmaps, label)
-                }.onFailure {
-                    val fallbackResult = BillScannerHelper.buildFallbackBillResult(
-                        existingVaccines = vaccines,
-                        existingVendors = vendors,
-                        preSelectedVaccineId = preSelectedVaccineId,
-                        sourceFileName = displayName
+                }.onFailure { err ->
+                    scanState = BillScanUiState.Error(
+                        "Unable to open PDF/document (${err.localizedMessage ?: "unreadable file"}). Ensure the PDF is not password-protected."
                     )
-                    scanState = BillScanUiState.ManualReviewNeeded(
-                        result = fallbackResult,
-                        noticeMessage = "PDF document attached. Verify the vaccine and quantity below to update stock."
-                    )
-                    applyScanResultToForm(fallbackResult)
                 }
             }
         }
@@ -794,10 +749,47 @@ fun BillScanStockDialog(
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = MaterialTheme.colorScheme.error
                                                     )
+                                                    if (billPages.isNotEmpty()) {
+                                                        Spacer(modifier = Modifier.height(6.dp))
+                                                        OutlinedButton(
+                                                            onClick = { triggerAiScan(billPages, selectedSourceLabel) },
+                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                            modifier = Modifier.testTag("btn_retry_bill_ai_scan")
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Refresh,
+                                                                contentDescription = "Retry AI Scan",
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                            Text(
+                                                                text = "Retry AI Scan",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                                 else -> {}
                                             }
                                         }
+                                    }
+                                }
+                                // Show error banner even if image decoding failed before billPages was populated
+                                if (billPages.isEmpty() && scanState is BillScanUiState.Error) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = Color(0xFFFEF2F2),
+                                        border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = (scanState as BillScanUiState.Error).message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFFB91C1C),
+                                            modifier = Modifier.padding(10.dp)
+                                        )
                                     }
                                 }
                             }

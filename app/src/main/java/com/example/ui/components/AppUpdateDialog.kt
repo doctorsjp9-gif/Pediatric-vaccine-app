@@ -30,9 +30,11 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shop
@@ -47,6 +49,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -363,7 +366,106 @@ fun AppUpdateDialog(
                             )
                         }
 
-                        // REAL Download New APK Button (Backs up old data first, then downloads the actual APK!)
+                        // Live Download Progress Bar (when verifying link or downloading directly)
+                        if (updateState.isVerifyingLink || updateState.isDownloading) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White,
+                                border = BorderStroke(1.dp, Color(0xFF99F6E4)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("download_progress_box")
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (updateState.isVerifyingLink) {
+                                                tr("Verifying APK link...", "APK लिंक की जांच हो रही है...")
+                                            } else {
+                                                tr(
+                                                    "Downloading APK... ${updateState.downloadProgressPercent}%",
+                                                    "नया APK डाउनलोड हो रहा है... ${updateState.downloadProgressPercent}%"
+                                                )
+                                            },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0F766E)
+                                        )
+                                        if (updateState.downloadedSizeLabel.isNotBlank()) {
+                                            Text(
+                                                text = updateState.downloadedSizeLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color(0xFF475569)
+                                            )
+                                        }
+                                    }
+                                    if (updateState.isVerifyingLink || updateState.downloadProgressPercent <= 0) {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(6.dp)
+                                                .clip(RoundedCornerShape(4.dp)),
+                                            color = Color(0xFF006874)
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            progress = { (updateState.downloadProgressPercent / 100f).coerceIn(0f, 1f) },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(6.dp)
+                                                .clip(RoundedCornerShape(4.dp)),
+                                            color = Color(0xFF0D7A3E)
+                                        )
+                                    }
+                                    if (updateState.downloadedFileName.isNotBlank()) {
+                                        Text(
+                                            text = tr(
+                                                "File: ${updateState.downloadedFileName}",
+                                                "फाइल: ${updateState.downloadedFileName}"
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF64748B)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Completed Download Banner -> 1-tap Open Downloads to Install the exact new file
+                        if (updateState.downloadCompleted && updateState.downloadedFileName.isNotBlank()) {
+                            Button(
+                                onClick = { AppUpdateManager.openDownloadsFolder(context) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("btn_open_downloads_to_install")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = tr(
+                                        "Open Downloads to Install New APK",
+                                        "इंस्टॉल करने के लिए Downloads खोलें"
+                                    ),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // REAL Direct Download New APK Button + Browser Fallback
                         if (updateState.hasDownloadableLink) {
                             Button(
                                 onClick = {
@@ -372,9 +474,10 @@ fun AppUpdateDialog(
                                             onRunPreUpdateBackupAndSync()
                                             AppUpdateManager.recordBackupTimestamp(context)
                                         }
-                                        AppUpdateManager.openRealApkDownload(context)
+                                        AppUpdateManager.startDirectApkDownload(context)
                                     }
                                 },
+                                enabled = !updateState.isDownloading && !updateState.isVerifyingLink,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (updateState.isUpdateAvailable) Color(0xFF0D7A3E) else Color(0xFF006874)
                                 ),
@@ -391,7 +494,12 @@ fun AppUpdateDialog(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (updateState.isUpdateAvailable) {
+                                    text = if (updateState.isDownloading) {
+                                        tr(
+                                            "Downloading... (${updateState.downloadProgressPercent}%)",
+                                            "डाउनलोड हो रहा है... (${updateState.downloadProgressPercent}%)"
+                                        )
+                                    } else if (updateState.isUpdateAvailable) {
                                         tr(
                                             "Download New APK (v${updateState.latestAvailableVersion})",
                                             "नया APK डाउनलोड करें (v${updateState.latestAvailableVersion})"
@@ -403,6 +511,35 @@ fun AppUpdateDialog(
                                         )
                                     },
                                     fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        if (updateState.autoBackupBeforeUpdate) {
+                                            onRunPreUpdateBackupAndSync()
+                                            AppUpdateManager.recordBackupTimestamp(context)
+                                        }
+                                        AppUpdateManager.openRealApkDownload(context)
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("btn_open_apk_in_browser")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.OpenInBrowser,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = tr("Open Download Link in Browser", "डाउनलोड लिंक ब्राउज़र में खोलें"),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         } else {
@@ -652,13 +789,59 @@ fun AppUpdateDialog(
                                         Spacer(modifier = Modifier.width(8.dp))
                                     }
                                     Text(
-                                        text = if (isCloudAuthenticated && selectedSourceType == UpdateSourceType.DIRECT_APK_OR_CLOUD) {
-                                            tr("Save & Sync New APK Link", "नया APK लिंक सेव व सिंक करें")
+                                        text = if (isCloudAuthenticated) {
+                                            tr("Save & Sync Release Source", "अपडेट लिंक सेव व सिंक करें")
                                         } else {
                                             tr("Save & Check Now", "सेव करें और जांचें")
                                         },
                                         fontWeight = FontWeight.Bold
                                     )
+                                }
+
+                                if (selectedSourceType == UpdateSourceType.DIRECT_APK_OR_CLOUD && apkUrlInput.isNotBlank()) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                val parsedCode = versionCodeInput.toIntOrNull()
+                                                    ?: (updateState.installedVersionCode.toInt() + 1)
+                                                val result = AppUpdateManager.saveAndPublishReleaseSource(
+                                                    context = context,
+                                                    sourceType = selectedSourceType,
+                                                    apkDownloadUrl = apkUrlInput,
+                                                    newVersionName = versionNameInput.ifBlank { updateState.installedPackageVersion },
+                                                    newVersionCode = parsedCode,
+                                                    githubRepo = githubRepoInput,
+                                                    manifestJsonUrl = manifestUrlInput,
+                                                    releaseNotes = releaseNotesInput
+                                                )
+                                                if (result.isSuccess) {
+                                                    showSourceConfig = false
+                                                    if (updateState.autoBackupBeforeUpdate) {
+                                                        onRunPreUpdateBackupAndSync()
+                                                        AppUpdateManager.recordBackupTimestamp(context)
+                                                    }
+                                                    AppUpdateManager.startDirectApkDownload(context, apkUrlInput)
+                                                }
+                                            }
+                                        },
+                                        enabled = !updateState.isPublishingRelease && !updateState.isDownloading && !updateState.isVerifyingLink,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D7A3E)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_save_and_download_now")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = tr("Save & Download APK Now", "सेव करें और अभी APK डाउनलोड करें"),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Sync
@@ -138,6 +139,7 @@ fun AuthSyncDialog(
     onDeleteOutOfStockVaccines: () -> Unit = {},
     onEraseAllCloudData: () -> Unit = {},
     onEraseAllData: () -> Unit = {},
+    onOpenExportShareDialog: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -546,6 +548,26 @@ fun AuthSyncDialog(
                         Icon(imageVector = Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Choose Data to Preserve or Delete on Sync")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Export / Share All Data to Google Drive & WhatsApp
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onOpenExportShareDialog()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("auth_dialog_export_share_btn"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF15803D)),
+                        border = BorderStroke(1.dp, Color(0xFF16A34A).copy(alpha = 0.55f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Export / Share All Data (Drive & WhatsApp)", fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))

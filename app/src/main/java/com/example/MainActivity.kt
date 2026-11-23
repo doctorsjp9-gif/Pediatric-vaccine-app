@@ -89,6 +89,7 @@ import com.example.ui.components.AuthSyncDialog
 import com.example.ui.components.BillScanStockDialog
 import com.example.ui.components.ClinicLogoAvatar
 import com.example.ui.components.CloudTransferDirection
+import com.example.ui.components.ExportShareDataDialog
 import com.example.ui.components.RecordSaleDialog
 import com.example.ui.components.VaccineFormDialog
 import com.example.ui.components.VendorFormDialog
@@ -191,6 +192,7 @@ fun VaccineStockApp(viewModel: VaccineStockViewModel, initialScreen: AppScreen =
     var authSyncTransferDirection by remember { mutableStateOf(CloudTransferDirection.UPLOAD) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
+    var showExportShareDialog by rememberSaveable { mutableStateOf(false) }
 
     val updateState by AppUpdateManager.updateState.collectAsStateWithLifecycle()
 
@@ -636,7 +638,8 @@ fun VaccineStockApp(viewModel: VaccineStockViewModel, initialScreen: AppScreen =
                         onNavigateToSales = { currentScreen = AppScreen.SALES },
                         onNavigateToPatients = { currentScreen = AppScreen.PATIENTS },
                         onNavigateToProfile = { currentScreen = AppScreen.PROFILE },
-                        onOpenAppUpdateDialog = { showAppUpdateDialog = true }
+                        onOpenAppUpdateDialog = { showAppUpdateDialog = true },
+                        onOpenExportShareDialog = { showExportShareDialog = true }
                     )
                 }
 
@@ -731,6 +734,7 @@ fun VaccineStockApp(viewModel: VaccineStockViewModel, initialScreen: AppScreen =
                         onSyncRequested = { viewModel.syncDataNow() },
                         onSignOutRequested = { showLogoutDialog = true },
                         onOpenAppUpdateDialog = { showAppUpdateDialog = true },
+                        onOpenExportShareDialog = { showExportShareDialog = true },
                         onSaveProfile = { updated ->
                             viewModel.saveClinicProfile(updated)
                         }
@@ -1017,6 +1021,7 @@ fun VaccineStockApp(viewModel: VaccineStockViewModel, initialScreen: AppScreen =
             onDeleteOutOfStockVaccines = { viewModel.deleteOutOfStockVaccines() },
             onEraseAllCloudData = { viewModel.eraseAllCloudData() },
             onEraseAllData = { viewModel.eraseAllData() },
+            onOpenExportShareDialog = { showExportShareDialog = true },
             onDismiss = {
                 authSyncOpenTransferTab = false
                 showAuthSyncDialog = false
@@ -1094,6 +1099,20 @@ fun VaccineStockApp(viewModel: VaccineStockViewModel, initialScreen: AppScreen =
                 viewModel.runPreUpdateSafetyBackupAndSync()
             },
             onDismiss = { showAppUpdateDialog = false }
+        )
+    }
+
+    if (showExportShareDialog) {
+        ExportShareDataDialog(
+            vaccines = vaccines,
+            patients = patients,
+            transactions = transactions,
+            vendors = vendors,
+            clinicProfile = clinicProfile,
+            onImportBackupUri = { uri, replaceExisting ->
+                viewModel.importBackupFromUri(uri, replaceExisting)
+            },
+            onDismiss = { showExportShareDialog = false }
         )
     }
 }

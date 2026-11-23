@@ -11,6 +11,7 @@ import com.example.data.model.StockTransaction
 import com.example.data.model.TransactionType
 import com.example.data.model.Vaccine
 import com.example.data.model.Vendor
+import com.example.data.util.SyncIdAndConflictResolver
 import kotlinx.coroutines.flow.Flow
 import kotlin.math.max
 
@@ -62,7 +63,10 @@ class VaccineStockRepository(
     suspend fun updateClinicProfile(profile: ClinicProfile) = profileDao.insertOrUpdate(profile)
 
     // Patient operations
-    suspend fun insertPatient(patient: PatientRegistration): Long = patientDao.insert(patient)
+    suspend fun insertPatient(patient: PatientRegistration): Long {
+        val withSafeId = if (patient.id == 0L) patient.copy(id = SyncIdAndConflictResolver.generateSyncSafeId()) else patient
+        return patientDao.insert(withSafeId)
+    }
     suspend fun updatePatient(patient: PatientRegistration) = patientDao.update(patient)
     suspend fun deletePatient(patient: PatientRegistration) = patientDao.delete(patient)
     suspend fun markPatientReminderSent(patientId: Long, sentMillis: Long = System.currentTimeMillis()) =
@@ -76,7 +80,10 @@ class VaccineStockRepository(
     suspend fun getVendorById(id: Long): Vendor? = vendorDao.getVendorById(id)
 
     // Vaccine operations
-    suspend fun insertVaccine(vaccine: Vaccine): Long = vaccineDao.insertVaccine(vaccine)
+    suspend fun insertVaccine(vaccine: Vaccine): Long {
+        val withSafeId = if (vaccine.id == 0L) vaccine.copy(id = SyncIdAndConflictResolver.generateSyncSafeId()) else vaccine
+        return vaccineDao.insertVaccine(withSafeId)
+    }
     suspend fun updateVaccine(vaccine: Vaccine) = vaccineDao.updateVaccine(vaccine)
     suspend fun deleteVaccine(vaccine: Vaccine) = vaccineDao.deleteVaccine(vaccine)
     suspend fun deleteAllVaccines() = vaccineDao.deleteAll()
@@ -94,7 +101,10 @@ class VaccineStockRepository(
     suspend fun deleteOldTransactions(beforeMillis: Long) = transactionDao.deleteOldTransactions(beforeMillis)
 
     // Vendor operations
-    suspend fun insertVendor(vendor: Vendor): Long = vendorDao.insertVendor(vendor)
+    suspend fun insertVendor(vendor: Vendor): Long {
+        val withSafeId = if (vendor.id == 0L) vendor.copy(id = SyncIdAndConflictResolver.generateSyncSafeId()) else vendor
+        return vendorDao.insertVendor(withSafeId)
+    }
     suspend fun updateVendor(vendor: Vendor) = vendorDao.updateVendor(vendor)
     suspend fun deleteVendor(vendor: Vendor) = vendorDao.deleteVendor(vendor)
     suspend fun deleteAllVendors() = vendorDao.deleteAll()
@@ -181,6 +191,7 @@ class VaccineStockRepository(
 
             val totalAmount = item.unitPurchasePrice * item.quantity
             val transaction = StockTransaction(
+                id = SyncIdAndConflictResolver.generateSyncSafeId(),
                 type = TransactionType.PURCHASE,
                 vaccineId = vaccine.id,
                 vaccineName = vaccine.name,
@@ -238,6 +249,7 @@ class VaccineStockRepository(
         var resolvedVendor: Vendor? = vendorId?.let { vendorDao.getVendorById(it) }
         if (resolvedVendor == null && newVendorName.isNotBlank()) {
             val newVendor = Vendor(
+                id = SyncIdAndConflictResolver.generateSyncSafeId(),
                 name = newVendorName.trim(),
                 contactPerson = "Bill Supplier",
                 phone = newVendorPhone.trim(),
@@ -292,6 +304,7 @@ class VaccineStockRepository(
                     else -> 0.0
                 }
                 val newVac = Vaccine(
+                    id = SyncIdAndConflictResolver.generateSyncSafeId(),
                     name = cleanName,
                     category = item.category.ifBlank { "Routine Pediatric" },
                     code = cleanCode.ifBlank {
@@ -319,6 +332,7 @@ class VaccineStockRepository(
             }
             val totalAmount = effectiveUnitCost * item.quantity
             val transaction = StockTransaction(
+                id = SyncIdAndConflictResolver.generateSyncSafeId(),
                 type = TransactionType.PURCHASE,
                 vaccineId = finalVaccine.id,
                 vaccineName = finalVaccine.name,
@@ -418,6 +432,7 @@ class VaccineStockRepository(
             val profit = (item.unitSellingPrice - costBasis) * item.quantity
 
             val transaction = StockTransaction(
+                id = SyncIdAndConflictResolver.generateSyncSafeId(),
                 type = TransactionType.SALE,
                 vaccineId = vaccine.id,
                 vaccineName = vaccine.name,
@@ -465,6 +480,7 @@ class VaccineStockRepository(
 
         val txType = if (isAddition) TransactionType.ADJUSTMENT_ADD else TransactionType.ADJUSTMENT_REDUCE
         val transaction = StockTransaction(
+            id = SyncIdAndConflictResolver.generateSyncSafeId(),
             type = txType,
             vaccineId = vaccine.id,
             vaccineName = vaccine.name,

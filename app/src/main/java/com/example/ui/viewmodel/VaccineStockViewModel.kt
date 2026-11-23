@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.database.AppDatabase
@@ -20,8 +21,11 @@ import com.example.data.repository.SelectiveCloudTransferRequest
 import com.example.data.repository.SyncStatusState
 import com.example.data.repository.VaccineStockRepository
 import com.example.data.util.LocalBackupManager
+import com.example.data.util.SyncTimestampTracker
 import com.example.ui.auth.AuthManager
 import com.example.ui.auth.UserSessionState
+import com.example.ui.util.DataExportManager
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -107,19 +111,30 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
             }
         }
 
-        // Silent auto sign-in and safe non-destructive merge sync on app startup
-        authManager.attemptSilentAutoSignIn(
-            scope = viewModelScope,
-            onSuccess = {
-                val user = authManager.sessionState.value.firebaseUser
-                if (user != null) {
-                    viewModelScope.launch {
-                        // Safe merge: preserves both old cloud data and local data without deleting anything
-                        cloudSyncRepository.syncAll(user.uid, purgeStaleCloudRecords = false)
+        // Observe Firebase Auth session to start/stop real-time multi-device sync listeners automatically
+        viewModelScope.launch {
+            authManager.sessionState
+                .map { it.firebaseUser?.uid }
+                .distinctUntilChanged()
+                .collectLatest { uid ->
+                    if (!uid.isNullOrBlank()) {
+                        // First perform a smart Last-Write-Wins sync so latest vaccine counts & edits from other devices apply immediately
+                        cloudSyncRepository.syncAll(uid, purgeStaleCloudRecords = false)
+                        // Then keep listening in real time for updates from other devices
+                        cloudSyncRepository.startRealtimeSyncListeners(uid, viewModelScope)
+                    } else {
+                        cloudSyncRepository.stopRealtimeSyncListeners()
                     }
                 }
-            }
-        )
+        }
+
+        // Silent auto sign-in on app startup
+        authManager.attemptSilentAutoSignIn(scope = viewModelScope)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        cloudSyncRepository.stopRealtimeSyncListeners()
     }
 
     val syncState: StateFlow<SyncStatusState> = cloudSyncRepository.syncState
@@ -210,6 +225,13 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                 notes = notes
             )
             result.onSuccess { tx ->
+                val now = System.currentTimeMillis()
+                SyncTimestampTracker.markVaccineModified(getApplication(), tx.vaccineId, now)
+                SyncTimestampTracker.markTransactionModified(getApplication(), tx.id, now)
+                launch {
+                    cloudSyncRepository.pushVaccinesByIdsToCloud(listOf(tx.vaccineId), now)
+                    cloudSyncRepository.pushTransactionsToCloud(listOf(tx), now)
+                }
                 _eventFlow.emit(UiEvent.ShowMessage("Added ${tx.quantity} units to stock! Current stock updated."))
             }.onFailure { ex ->
                 _eventFlow.emit(UiEvent.ShowError(ex.message ?: "Failed to record purchase"))
@@ -231,6 +253,14 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                 notes = notes
             )
             result.onSuccess { txList ->
+                val now = System.currentTimeMillis()
+                val vaccineIds = txList.map { it.vaccineId }.distinct()
+                vaccineIds.forEach { SyncTimestampTracker.markVaccineModified(getApplication(), it, now) }
+                txList.forEach { SyncTimestampTracker.markTransactionModified(getApplication(), it.id, now) }
+                launch {
+                    cloudSyncRepository.pushVaccinesByIdsToCloud(vaccineIds, now)
+                    cloudSyncRepository.pushTransactionsToCloud(txList, now)
+                }
                 val totalDoses = txList.sumOf { it.quantity }
                 val totalCost = txList.sumOf { it.totalAmount }
                 _eventFlow.emit(
@@ -262,13 +292,22 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                 items = items
             )
             result.onSuccess { (txList, newVaccinesCount) ->
+                val now = System.currentTimeMillis()
+                val vaccineIds = txList.map { it.vaccineId }.distinct()
+                vaccineIds.forEach { SyncTimestampTracker.markVaccineModified(getApplication(), it, now) }
+                txList.forEach { SyncTimestampTracker.markTransactionModified(getApplication(), it.id, now) }
+                txList.firstOrNull()?.vendorId?.let { vId ->
+                    SyncTimestampTracker.markVendorModified(getApplication(), vId, now)
+                }
                 LocalBackupManager.saveAutoBackup(getApplication(), database)
-                val user = authManager.sessionState.value.firebaseUser
-                val mobile = authManager.sessionState.value.mobileNumber
-                val targetUid = user?.uid ?: mobile
-                if (targetUid != null) {
+                val targetUid = authManager.sessionState.value.firebaseUser?.uid
+                if (!targetUid.isNullOrBlank()) {
                     launch {
-                        cloudSyncRepository.syncAll(targetUid, purgeStaleCloudRecords = false)
+                        cloudSyncRepository.pushVaccinesByIdsToCloud(vaccineIds, now)
+                        cloudSyncRepository.pushTransactionsToCloud(txList, now)
+                        txList.firstOrNull()?.vendorId?.let { vId ->
+                            repository.getVendorById(vId)?.let { cloudSyncRepository.pushVendorToCloud(it, now) }
+                        }
                     }
                 }
                 val totalDoses = txList.sumOf { it.quantity }
@@ -303,6 +342,13 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                 notes = notes
             )
             result.onSuccess { tx ->
+                val now = System.currentTimeMillis()
+                SyncTimestampTracker.markVaccineModified(getApplication(), tx.vaccineId, now)
+                SyncTimestampTracker.markTransactionModified(getApplication(), tx.id, now)
+                launch {
+                    cloudSyncRepository.pushVaccinesByIdsToCloud(listOf(tx.vaccineId), now)
+                    cloudSyncRepository.pushTransactionsToCloud(listOf(tx), now)
+                }
                 _eventFlow.emit(
                     UiEvent.ShowMessage(
                         "Sold ${tx.quantity} units! Stock reduced. Profit: ₹${String.format("%.2f", tx.profit)}"
@@ -326,6 +372,14 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                 notes = notes
             )
             result.onSuccess { txList ->
+                val now = System.currentTimeMillis()
+                val vaccineIds = txList.map { it.vaccineId }.distinct()
+                vaccineIds.forEach { SyncTimestampTracker.markVaccineModified(getApplication(), it, now) }
+                txList.forEach { SyncTimestampTracker.markTransactionModified(getApplication(), it.id, now) }
+                launch {
+                    cloudSyncRepository.pushVaccinesByIdsToCloud(vaccineIds, now)
+                    cloudSyncRepository.pushTransactionsToCloud(txList, now)
+                }
                 val totalDoses = txList.sumOf { it.quantity }
                 val totalProfit = txList.sumOf { it.profit }
                 val totalRevenue = txList.sumOf { it.totalAmount }
@@ -353,7 +407,14 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                 quantity = quantity,
                 reason = reason
             )
-            result.onSuccess {
+            result.onSuccess { tx ->
+                val now = System.currentTimeMillis()
+                SyncTimestampTracker.markVaccineModified(getApplication(), tx.vaccineId, now)
+                SyncTimestampTracker.markTransactionModified(getApplication(), tx.id, now)
+                launch {
+                    cloudSyncRepository.pushVaccinesByIdsToCloud(listOf(tx.vaccineId), now)
+                    cloudSyncRepository.pushTransactionsToCloud(listOf(tx), now)
+                }
                 val action = if (isAddition) "added to" else "reduced from"
                 _eventFlow.emit(UiEvent.ShowMessage("Stock successfully $action inventory."))
             }.onFailure { ex ->
@@ -365,11 +426,17 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     fun saveVaccine(vaccine: Vaccine) {
         viewModelScope.launch {
             try {
+                val now = System.currentTimeMillis()
                 if (vaccine.id == 0L) {
-                    repository.insertVaccine(vaccine)
+                    val newId = repository.insertVaccine(vaccine)
+                    val saved = vaccine.copy(id = newId)
+                    SyncTimestampTracker.markVaccineModified(getApplication(), newId, now)
+                    launch { cloudSyncRepository.pushVaccineToCloud(saved, now) }
                     _eventFlow.emit(UiEvent.ShowMessage("Vaccine '${vaccine.name}' created"))
                 } else {
                     repository.updateVaccine(vaccine)
+                    SyncTimestampTracker.markVaccineModified(getApplication(), vaccine.id, now)
+                    launch { cloudSyncRepository.pushVaccineToCloud(vaccine, now) }
                     _eventFlow.emit(UiEvent.ShowMessage("Vaccine '${vaccine.name}' updated"))
                 }
             } catch (e: Exception) {
@@ -491,11 +558,17 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     fun saveVendor(vendor: Vendor) {
         viewModelScope.launch {
             try {
+                val now = System.currentTimeMillis()
                 if (vendor.id == 0L) {
-                    repository.insertVendor(vendor)
+                    val newId = repository.insertVendor(vendor)
+                    val saved = vendor.copy(id = newId)
+                    SyncTimestampTracker.markVendorModified(getApplication(), newId, now)
+                    launch { cloudSyncRepository.pushVendorToCloud(saved, now) }
                     _eventFlow.emit(UiEvent.ShowMessage("Vendor '${vendor.name}' added"))
                 } else {
                     repository.updateVendor(vendor)
+                    SyncTimestampTracker.markVendorModified(getApplication(), vendor.id, now)
+                    launch { cloudSyncRepository.pushVendorToCloud(vendor, now) }
                     _eventFlow.emit(UiEvent.ShowMessage("Vendor '${vendor.name}' updated"))
                 }
             } catch (e: Exception) {
@@ -568,18 +641,33 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
                                 notes = "Administered: ${patient.vaccineGivenToday} (${patient.vaccineGivenDose})",
                                 items = saleItems
                             )
-                            result.onFailure {
+                            result.onSuccess { txList ->
+                                val nowSale = System.currentTimeMillis()
+                                val vIds = txList.map { it.vaccineId }.distinct()
+                                vIds.forEach { SyncTimestampTracker.markVaccineModified(getApplication(), it, nowSale) }
+                                txList.forEach { SyncTimestampTracker.markTransactionModified(getApplication(), it.id, nowSale) }
+                                launch {
+                                    cloudSyncRepository.pushVaccinesByIdsToCloud(vIds, nowSale)
+                                    cloudSyncRepository.pushTransactionsToCloud(txList, nowSale)
+                                }
+                            }.onFailure {
                                 _eventFlow.emit(UiEvent.ShowError("Could not deduct stock: ${it.message}"))
                             }
                         }
                     }
                 }
 
+                val now = System.currentTimeMillis()
                 if (patient.id == 0L) {
-                    repository.insertPatient(patient)
+                    val newId = repository.insertPatient(patient)
+                    val saved = patient.copy(id = newId)
+                    SyncTimestampTracker.markPatientModified(getApplication(), newId, now)
+                    launch { cloudSyncRepository.pushPatientToCloud(saved, now) }
                     _eventFlow.emit(UiEvent.ShowMessage("Patient '${patient.patientName}' registered successfully"))
                 } else {
                     repository.updatePatient(patient)
+                    SyncTimestampTracker.markPatientModified(getApplication(), patient.id, now)
+                    launch { cloudSyncRepository.pushPatientToCloud(patient, now) }
                     _eventFlow.emit(UiEvent.ShowMessage("Patient record updated"))
                 }
             } catch (e: Exception) {
@@ -693,7 +781,10 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     fun markPatientReminderSent(patientId: Long) {
         viewModelScope.launch {
             try {
-                repository.markPatientReminderSent(patientId)
+                val now = System.currentTimeMillis()
+                repository.markPatientReminderSent(patientId, now)
+                SyncTimestampTracker.markPatientModified(getApplication(), patientId, now)
+                launch { cloudSyncRepository.pushPatientByIdToCloud(patientId, now) }
                 _eventFlow.emit(UiEvent.ShowMessage("WhatsApp reminder sent & logged!"))
             } catch (e: Exception) {
                 _eventFlow.emit(UiEvent.ShowError(e.message ?: "Failed to update reminder status"))
@@ -704,7 +795,10 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     fun updatePatientReminderDate(patientId: Long, nextDueDate: String, nextDueDateMillis: Long) {
         viewModelScope.launch {
             try {
+                val now = System.currentTimeMillis()
                 repository.updatePatientReminderDate(patientId, nextDueDate, nextDueDateMillis)
+                SyncTimestampTracker.markPatientModified(getApplication(), patientId, now)
+                launch { cloudSyncRepository.pushPatientByIdToCloud(patientId, now) }
                 _eventFlow.emit(UiEvent.ShowMessage("Next reminder set for $nextDueDate"))
             } catch (e: Exception) {
                 _eventFlow.emit(UiEvent.ShowError(e.message ?: "Failed to update reminder date"))
@@ -715,7 +809,10 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     fun updatePatientAge(patientId: Long, dobOrAge: String) {
         viewModelScope.launch {
             try {
+                val now = System.currentTimeMillis()
                 repository.updatePatientAge(patientId, dobOrAge)
+                SyncTimestampTracker.markPatientModified(getApplication(), patientId, now)
+                launch { cloudSyncRepository.pushPatientByIdToCloud(patientId, now) }
                 _eventFlow.emit(UiEvent.ShowMessage("Patient age updated to $dobOrAge"))
             } catch (e: Exception) {
                 _eventFlow.emit(UiEvent.ShowError(e.message ?: "Failed to update age"))
@@ -726,7 +823,10 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     fun saveClinicProfile(profile: ClinicProfile) {
         viewModelScope.launch {
             try {
+                val now = System.currentTimeMillis()
                 repository.updateClinicProfile(profile)
+                SyncTimestampTracker.markProfileModified(getApplication(), now)
+                launch { cloudSyncRepository.pushClinicProfileToCloud(profile, now) }
                 _eventFlow.emit(UiEvent.ShowMessage("Clinic Profile saved"))
             } catch (e: Exception) {
                 _eventFlow.emit(UiEvent.ShowError(e.message ?: "Failed to save profile"))
@@ -816,18 +916,16 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
 
     fun syncDataWithConfig(config: CloudSyncConfig) {
         viewModelScope.launch {
-            val user = authManager.sessionState.value.firebaseUser
-            val mobile = authManager.sessionState.value.mobileNumber
-            val targetUid = user?.uid ?: mobile ?: run {
-                _eventFlow.emit(UiEvent.ShowError("Please login with Gmail or Mobile Number to sync across devices"))
+            val targetUid = authManager.sessionState.value.firebaseUser?.uid ?: run {
+                _eventFlow.emit(UiEvent.ShowError("Please sign in with Google (Gmail) to sync across devices"))
                 return@launch
             }
 
-            _eventFlow.emit(UiEvent.ShowMessage("Synchronizing selected data with Cloud..."))
+            _eventFlow.emit(UiEvent.ShowMessage("Synchronizing latest data with Cloud..."))
             val result = cloudSyncRepository.syncWithConfig(targetUid, config)
             if (result.isSuccess) {
-                com.example.data.util.LocalBackupManager.saveAutoBackup(getApplication(), database)
-                _eventFlow.emit(UiEvent.ShowMessage("Sync complete! ${result.getOrNull()} records synchronized with your preserve/delete choices."))
+                LocalBackupManager.saveAutoBackup(getApplication(), database)
+                _eventFlow.emit(UiEvent.ShowMessage(cloudSyncRepository.syncState.value.statusMessage))
             } else {
                 val err = result.exceptionOrNull()?.localizedMessage ?: "Sync failed"
                 _eventFlow.emit(UiEvent.ShowError("Sync issue: $err"))
@@ -838,9 +936,7 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
     suspend fun runPreUpdateSafetyBackupAndSync() {
         try {
             LocalBackupManager.saveAutoBackup(getApplication(), database)
-            val user = authManager.sessionState.value.firebaseUser
-            val mobile = authManager.sessionState.value.mobileNumber
-            val targetUid = user?.uid ?: mobile
+            val targetUid = authManager.sessionState.value.firebaseUser?.uid
             if (!targetUid.isNullOrBlank()) {
                 cloudSyncRepository.syncAll(targetUid, purgeStaleCloudRecords = false)
             }
@@ -850,10 +946,8 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
 
     fun fetchCloudPreview() {
         viewModelScope.launch {
-            val user = authManager.sessionState.value.firebaseUser
-            val mobile = authManager.sessionState.value.mobileNumber
-            val targetUid = user?.uid ?: mobile ?: run {
-                _eventFlow.emit(UiEvent.ShowError("Please login first to view Cloud records"))
+            val targetUid = authManager.sessionState.value.firebaseUser?.uid ?: run {
+                _eventFlow.emit(UiEvent.ShowError("Please sign in with Google (Gmail) first to view Cloud records"))
                 return@launch
             }
             val result = cloudSyncRepository.fetchCloudSnapshot(targetUid)
@@ -866,10 +960,8 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
 
     fun uploadSelectedToCloud(request: SelectiveCloudTransferRequest) {
         viewModelScope.launch {
-            val user = authManager.sessionState.value.firebaseUser
-            val mobile = authManager.sessionState.value.mobileNumber
-            val targetUid = user?.uid ?: mobile ?: run {
-                _eventFlow.emit(UiEvent.ShowError("Please login with Gmail or Mobile Number to upload to Cloud"))
+            val targetUid = authManager.sessionState.value.firebaseUser?.uid ?: run {
+                _eventFlow.emit(UiEvent.ShowError("Please sign in with Google (Gmail) to upload to Cloud"))
                 return@launch
             }
 
@@ -886,10 +978,8 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
 
     fun downloadSelectedFromCloud(request: SelectiveCloudTransferRequest) {
         viewModelScope.launch {
-            val user = authManager.sessionState.value.firebaseUser
-            val mobile = authManager.sessionState.value.mobileNumber
-            val targetUid = user?.uid ?: mobile ?: run {
-                _eventFlow.emit(UiEvent.ShowError("Please login with Gmail or Mobile Number to download from Cloud"))
+            val targetUid = authManager.sessionState.value.firebaseUser?.uid ?: run {
+                _eventFlow.emit(UiEvent.ShowError("Please sign in with Google (Gmail) to download from Cloud"))
                 return@launch
             }
 
@@ -904,7 +994,34 @@ class VaccineStockViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun importBackupFromUri(uri: Uri, replaceExisting: Boolean = false) {
+        viewModelScope.launch {
+            val result = DataExportManager.importBackupFromJsonUri(
+                context = getApplication(),
+                uri = uri,
+                database = database,
+                replaceExisting = replaceExisting
+            )
+            result.onSuccess { stats ->
+                _eventFlow.emit(
+                    UiEvent.ShowMessage(
+                        "Backup restored! ${stats.vaccinesCount} vaccines, ${stats.patientsCount} patients, ${stats.transactionsCount} transactions, ${stats.vendorsCount} vendors."
+                    )
+                )
+                val targetUid = authManager.sessionState.value.firebaseUser?.uid
+                if (!targetUid.isNullOrBlank()) {
+                    launch {
+                        cloudSyncRepository.syncAll(targetUid, purgeStaleCloudRecords = false)
+                    }
+                }
+            }.onFailure { err ->
+                _eventFlow.emit(UiEvent.ShowError("Restore failed: ${err.localizedMessage ?: "Invalid backup file"}"))
+            }
+        }
+    }
+
     fun signOutUser() {
+        cloudSyncRepository.stopRealtimeSyncListeners()
         authManager.signOut(viewModelScope) {
             viewModelScope.launch {
                 _eventFlow.emit(UiEvent.ShowMessage("Signed out. Device will use local offline storage."))

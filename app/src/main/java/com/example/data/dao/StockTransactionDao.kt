@@ -43,6 +43,9 @@ interface StockTransactionDao {
     @Query("DELETE FROM stock_transactions")
     suspend fun deleteAll()
 
+    @Query("UPDATE stock_transactions SET vaccineId = :newVaccineId WHERE vaccineId = :oldVaccineId")
+    suspend fun remapVaccineId(oldVaccineId: Long, newVaccineId: Long)
+
     @Query("DELETE FROM stock_transactions WHERE timestamp < :beforeTimestamp")
     suspend fun deleteOldTransactions(beforeTimestamp: Long)
 }

@@ -1,7 +1,9 @@
 package com.example.data.model
 
+import androidx.annotation.Keep
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.google.firebase.firestore.IgnoreExtraProperties
 
 object TransactionType {
     const val PURCHASE = "PURCHASE"
@@ -10,6 +12,8 @@ object TransactionType {
     const val ADJUSTMENT_REDUCE = "ADJUSTMENT_REDUCE"
 }
 
+@Keep
+@IgnoreExtraProperties
 @Entity(tableName = "stock_transactions")
 data class StockTransaction(
     @PrimaryKey(autoGenerate = true)

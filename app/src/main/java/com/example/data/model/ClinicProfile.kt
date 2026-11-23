@@ -1,8 +1,12 @@
 package com.example.data.model
 
+import androidx.annotation.Keep
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.google.firebase.firestore.IgnoreExtraProperties
 
+@Keep
+@IgnoreExtraProperties
 @Entity(tableName = "clinic_profile")
 data class ClinicProfile(
     @PrimaryKey

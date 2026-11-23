@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Sync
@@ -96,6 +97,7 @@ fun DashboardScreen(
     onNavigateToPatients: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onOpenAppUpdateDialog: () -> Unit = {},
+    onOpenExportShareDialog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val updateState by AppUpdateManager.updateState.collectAsStateWithLifecycle()
@@ -359,6 +361,33 @@ fun DashboardScreen(
                                 maxLines = 1
                             )
                         }
+                    }
+
+                    // Export & Share All Data to Google Drive / WhatsApp Button
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onOpenExportShareDialog,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF16A34A).copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF15803D)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 40.dp)
+                            .testTag("dashboard_export_share_btn")
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = tr(
+                                "Export / Share All Data (Google Drive & WhatsApp)",
+                                "डेटा एक्सपोर्ट / शेयर करें (Google Drive और WhatsApp)"
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }

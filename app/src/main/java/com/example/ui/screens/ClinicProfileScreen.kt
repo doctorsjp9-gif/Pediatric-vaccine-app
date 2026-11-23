@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -116,6 +117,7 @@ fun ClinicProfileScreen(
     onSyncRequested: () -> Unit = {},
     onSignOutRequested: () -> Unit = {},
     onOpenAppUpdateDialog: () -> Unit = {},
+    onOpenExportShareDialog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -735,6 +737,36 @@ fun ClinicProfileScreen(
                                     }
                                 }
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onOpenExportShareDialog,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("profile_export_share_btn"),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color(0xFF15803D)
+                            ),
+                            border = BorderStroke(1.dp, Color(0xFF16A34A).copy(alpha = 0.55f)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Export & Share Data",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF15803D)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = tr(
+                                    "Export / Share All Data (Drive & WhatsApp)",
+                                    "डेटा एक्सपोर्ट / शेयर करें (Drive और WhatsApp)"
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
                         }
 
                         if (sessionState?.isAuthenticated == true) {
