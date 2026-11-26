@@ -10,33 +10,111 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-    - name: Create mock google-services.json and debug.keystore
-      run: |
-        mkdir -p app
-        echo '{"project_info":{"project_number":"123456789","project_id":"dummy-project","storage_bucket":"dummy.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:123456789","android_client_info":{"package_name":"com.aistudio.vaccinestock.qrxvwt"}},"oauth_client":[{"client_id":"dummy_client_id.apps.googleusercontent.com","client_type":3}],"api_key":[{"current_key":"dummy_key"}],"services":{}}],"configuration_version":"1"}' > app/google-services.json
-        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-    - name: Build Debug and Release APKs
-      env:
-        STORE_PASSWORD: android
-        KEY_PASSWORD: android
-      run: gradle assembleDebug assembleRelease
+      - name: Detect Gradle project root
+        run: |
+          if [ -f "gradlew" ] || [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
+            PROJECT_ROOT="."
+          else
+            ROOT_FILE=$(find . -maxdepth 3 \( -name "gradlew" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
+            if [ -n "$ROOT_FILE" ]; then
+              PROJECT_ROOT=$(dirname "$ROOT_FILE")
+            else
+              echo "Could not find Gradle project root"
+              exit 1
+            fi
+          fi
+          echo "Detected Gradle project root: $PROJECT_ROOT"
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
 
-    - name: Upload APK artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: DrPriyankClinic-apk
-        path: app/build/outputs/apk/**/*.apk
+      - name: Ensure fallback google-services.json and signing keystores
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: |
+          cd "$PROJECT_ROOT"
+          APP_DIR="app"
+          mkdir -p "$APP_DIR"
+
+          if [ ! -f "$APP_DIR/google-services.json" ]; then
+            cat << 'EOF' > "$APP_DIR/google-services.json"
+          {
+            "project_info": {
+              "project_number": "123456789000",
+              "project_id": "mock-project-id",
+              "storage_bucket": "mock-project-id.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789000:android:1234567890abcdef",
+                  "android_client_info": {
+                    "package_name": "com.aistudio.vaccinestock.qrxvwt"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyMockKeyForBuild123456789012345"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
+
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkeypair -v -keystore debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          KEYSTORE_FILE="${KEYSTORE_PATH:-my-upload-key.jks}"
+          if [ ! -f "$KEYSTORE_FILE" ]; then
+            keytool -genkeypair -v -keystore "$KEYSTORE_FILE" \
+              -storepass "$STORE_PASSWORD" -alias upload -keypass "$KEY_PASSWORD" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Upload,O=Android,C=US"
+          fi
+
+      - name: Build Debug and Release APKs
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: |
+          cd "$PROJECT_ROOT"
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug assembleRelease --no-daemon
+          else
+            gradle assembleDebug assembleRelease --no-daemon
+          fi
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrPriyankClinic-apk
+          path: ${{ env.PROJECT_ROOT }}/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
